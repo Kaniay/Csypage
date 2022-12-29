@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>ArcGIS API for JavaScript Tutorials: Display a map</title>
+    <link rel="stylesheet" href="1.css">
+
+
+    <link rel="stylesheet" href="https://js.arcgis.com/4.24/esri/themes/light/main.css">
+    <script src="https://js.arcgis.com/4.25/"></script>
+
+
+
+    <script>
+        require([
+            "esri/config",
+            "esri/Map",
+            "esri/views/MapView",
+            "esri/widgets/ScaleBar",
+            "esri/widgets/LayerList",
+            "esri/widgets/BasemapLayerList",
+            "esri/Graphic",
+            "esri/layers/FeatureLayer",
+            "esri/layers/GraphicsLayer",
+            "esri/layers/MapImageLayer",
+            "esri/layers/TileLayer",
+            "esri/layers/GeoJSONLayer",
+            "esri/rest/geometryService",
+            "esri/rest/support/BufferParameters",
+            "esri/widgets/Legend"
+        ], function (
+            esriConfig,
+            Map,
+            MapView,
+            ScaleBar,
+            LayerList,
+            BasemapLayerList,
+            Graphic,
+            FeatureLayer,
+            GraphicsLayer,
+            MapImageLayer,
+            TileLayer,
+            GeoJSONLayer,
+            geometryService,
+            BufferParameters,
+            Legend
+        ) {
+            esriConfig.apiKey = "AAPK052f8f843af642e1b9d9d0c6d8f4f2c6QCllBJqriNh1qspREUG-25DOzpOILRERdkvyVGudSKkp-GO9kxcJTuiaH4LPXgXE";
+            esriConfig.portalUrl = "https://www.geosceneonline.cn/geoscene/webapps/";
+
+            // 地图准备
+            const map = new Map({
+                basemap: "arcgis-light-gray",
+            });
+            const view = new MapView({
+                map: map,
+                center: [114.30, 30.50], // Longitude, latitude
+                zoom: 5, // Zoom level
+                container: "viewDiv", // Div element
+            });
+            const pg = new GeoJSONLayer({
+                url: "https://kaniay.github.io/Csy/polygon.geojson",
+                outFields: ["name"],
+                popupTemplate: {
+                    title: "{name}"
+                },
+                title: "长沙市行政区划"
+            });
+            map.add(pg);
+            const pt = new GeoJSONLayer({
+                url: "https://kaniay.github.io/Csy/point.geojson",
+                outFields: ["name", "address"],
+                popupTemplate: {
+                    // title: "省份",
+                    content: "<b>NAME:</b> {name}<br><b>ADDRESS:</b> {address}<br>"
+                },
+                title: "长沙市茶颜悦色售卖点"
+            });
+            map.add(pt);
+
+            // pt渲染器
+            let rendererpt = {
+                type: "simple",
+                symbol: {
+                    type: "simple-marker",
+                    color: "rgba(38, 182, 255, 1)",
+                    size: 5,
+                    outline: {
+                        color: "rgba(38, 182, 255, 1)"
+                    }
+                }
+            };
+            pt.renderer = rendererpt;
+            pt.effect = "bloom(200%)";
+
+            // pg渲染器
+            let rendererpg = {
+                type: "simple",
+                symbol: {
+                    type: "simple-fill",
+                    color: "rgba(205, 118, 214, 0.3)",
+                    outline: {
+                        color: "black",
+                        size: 1
+                    }
+                }
+            };
+            pg.renderer = rendererpg;
+
+
+            //面图层加载后跳转
+            pg.when(() => {
+                view.goTo({
+                    target: pg.fullExtent,
+                    zoom: 9
+                });
+            });
+
+
+
+            // 功能一：查询某一区域的点
+            const bt1 = document.getElementById("search");
+            bt1.addEventListener('click', (event) => {
+                pt.visible = false;
+                pg.visible = false;
+                view.graphics.removeAll();
+                const region = document.getElementById("region").value;
+
+                // 面查询
+                var query1 = pg.createQuery()
+                query1.returnGeometry = true;
+                query1.outFields = ["name"];
+                query1.outSpatialReference = { "wkid": 4326 };
+                query1.where = `name = '${region}'`;
+                pg.queryFeatures(query1).then(function (featureSet) {
+                    if (featureSet.features.length == 0) {
+                        alert("没有该地区，请点击区域图层查看区域名称");
+                        pg.visible = true;
+                    }
+                    else {
+                        featureSet.features.forEach(function (graphicItem) {
+                            graphicItem.symbol = {
+                                type: "simple-fill",
+                                color: "rgba(205, 118, 214, 0.3)",
+                                outline: {
+                                    color: "black",
+                                    size: 1
+                                }
+                            }
+                            view.graphics.add(graphicItem);
+                        });
+                    };
+                });
+                // 点查询
+                var query2 = pt.createQuery()
+                query2.returnGeometry = true;
+                query2.outFields = ["area", "name", "address"];
+                query2.outSpatialReference = { "wkid": 4326 };
+                query2.where = `area = '${region}'`;
+                pt.queryFeatures(query2).then(function (featureSet) {
+                    featureSet.features.forEach(function (graphicItem) {
+                        graphicItem.symbol = {
+                            type: "simple-marker",
+                            color: "rgba(180, 77, 255, 0.3)",
+                            outline: {
+                                width: 1,
+                                color: "black"
+                            }
+                        };
+                        graphicItem.popupTemplate= {
+                            // title: "省份",
+                            content: "<b>NAME:</b> {name}<br><b>ADDRESS:</b> {address}<br>"
+                        }
+                        view.graphics.add(graphicItem);
+                    });
+                });
+
+                view.goTo({
+                    target: pg.fullExtent,
+                    zoom: 9
+                });
+
+
+
+            });
+
+            // 功能二：建立所有点的缓冲区
+            const bt2 = document.getElementById("buffer");
+            bt2.addEventListener('click', (event) => {
+
+                view.graphics.removeAll();
+                pg.visible = false;
+                pt.visible = true;
+
+                var query2 = pt.createQuery();
+                query2.returnGeometry = true;
+                query2.outFields = ["area", "name", "address", "province"];
+                query2.outSpatialReference = { "wkid": 4326 };
+                query2.where = "province = '湖南省'";
+                pt.queryFeatures(query2).then(function (featureSet) {
+                    featureSet.features.forEach(function (graphicItem) {
+
+                        const params1 = new BufferParameters(
+                            {
+                                distances: [0.5],
+                                unit: "kilometers",
+                                geodesic: true,
+                                unionResults: true,
+                                bufferSpatialReference: { "wkid": 3857 },
+                                outSpatialReference: pt.spatialReference,
+                                geometries: [graphicItem.geometry]
+                            }
+                        );
+                        // 建立缓冲区
+                        geometryService.buffer("https://sampleserver6.arcgisonline.com/arcgis/rest/services/Utilities/Geometry/GeometryServer", params1).then(function (polygonlist) {
+                            polygonlist.forEach(function (polygon) {
+                                // 高亮显示缓冲区
+                                view.graphics.add(
+                                    new Graphic({
+                                        geometry: polygon,
+                                        symbol: {
+                                            type: "simple-fill",
+                                            color: "rgba(103, 230, 209, 0.35)",
+                                            outline: {
+                                                color: "rgba(38, 182, 255, 1)",
+                                                width: "1.5px"
+                                            }
+                                        }
+                                    })
+                                );//缓冲区高亮
+                            })
+                        });
+
+                    });
+                });
+                view.goTo({
+                    target: pg.fullExtent,
+                    zoom: 9
+                });
+            });
+
+
+
+            // 功能三：点击生成缓冲区
+            view.on('click', work)
+
+            function work(event) {
+                if (event.button != 2) {
+                    return;
+                }
+                view.graphics.removeAll();
+                pt.visible = true;
+                // 以点击点建立缓冲区
+                // 参数
+                const params = new BufferParameters(
+                    {
+                        distances: [2],
+                        unit: "kilometers",
+                        geodesic: true,
+                        unionResults: true,
+                        bufferSpatialReference: { "wkid": 3857 },
+                        outSpatialReference: pt.spatialReference,
+                        geometries: [event.mapPoint]
+                    }
+                );
+                // 建立缓冲区
+                geometryService.buffer("https://sampleserver6.arcgisonline.com/arcgis/rest/services/Utilities/Geometry/GeometryServer", params).then(function (polygonlist) {
+                    // 高亮缓冲区＋查询点
+                    polygonlist.forEach(function (polygon) {
+
+
+                        view.graphics.add(
+                            new Graphic({
+                                geometry: polygon,
+                                symbol: {
+                                    type: "simple-fill",
+                                    color: "rgba(103, 230, 209, 0.35)",
+                                    outline: {
+                                        color: "rgba(38, 182, 255, 1)",
+                                        width: "1.5px"
+                                    }
+                                }
+                            })
+                        );
+
+                        var query1 = pt.createQuery();
+                        query1.geometry = polygon;
+                        query1.returnGeometry = true;
+                        query1.outSpatialReference = pt.spatialReference;
+                        query1.spatialRelationship = "intersects";
+
+
+                        pt.queryFeatures(query1).then(highlight);
+
+                        function highlight(featureset) {
+                            featureset.features.forEach(function (graphic) {
+                                graphic.symbol = {
+                                    type: "simple-marker",
+                                    color: "w",
+                                    width: 2,
+                                    style: "circle"
+                                }
+                                view.graphics.add(graphic);
+                            });
+                        }
+                    });
+                });
+            };
+
+            // 功能四：分级显示
+            const bt3 = document.getElementById("level");
+            bt3.addEventListener('click', (event) => {
+                view.graphics.removeAll()
+                pt.visible = true
+                pt.effect = null
+                let renderer1 = {
+                    type: "simple",
+                    symbol: {
+                        type: "simple-marker"
+                    },
+                    visualVariables: [
+                        {
+                            type: "color",
+                            field: "level",
+                            legendOptions: {
+                                title: "火热度"
+                            },
+                            stops: [     //设置变化范围
+                                {
+                                    value: 0, // 最低值
+                                    color: "white",
+                                    label: "冷" // 图例指示
+                                },
+                                {
+                                    value: 10,
+                                    color: "#ff4141",
+                                    label: "火"
+                                }
+                            ]
+                        }
+                    ]
+                };
+                pt.renderer = renderer1;
+            })
+            const bt4 = document.getElementById("before");
+            bt4.addEventListener('click', (event) => {
+                view.graphics.removeAll()
+                pt.effect = "bloom(200%)";
+                pt.renderer = rendererpt;
+                pt.visible = true;
+                pg.visible = true;
+                view.goTo({
+                    target: pg.fullExtent,
+                    zoom: 9
+                });
+            })
+
+
+            // 图层列表
+            const layerList = new LayerList({
+                view: view
+            });
+            view.ui.add(layerList, {
+                position: "top-right"
+            });
+
+            // 图例
+
+            const legend = new Legend({
+                view: view
+            });
+            view.ui.add(legend, {
+                position: "bottom-left"
+            });
+        });
+    </script>
+
+</head>
+
+<body>
+    <div id="center">
+        <form id="cixu">
+            <button type="button" id="before"><span>还原</span></button>
+            <button type="button" id="level"><span>等级</span></button>
+            <button type="button" id="buffer"><span>500米缓冲区</span></button>
+            <button type="button" id="search"><span>查询</span></button>
+            <input type="text" id="region" value="输入区域名称" />
+        </form>
+    </div>
+    <div id="viewDiv"></div>
+</body>
+
+</html>
